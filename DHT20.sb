@@ -1,0 +1,82 @@
+// 
+//
+DIM nSlaveAddr: nSlaveAddr = 0x38
+DIM handle
+DIM rc
+
+// オープン
+sub I2COpen_()
+	rc = I2cOpen(400 * 1000, 0, handle)
+	
+	if (rc == 0x5207) THEN
+		print "\nI2C already open."
+	elseif (rc == 0) THEN
+		print "\nI2C opened successfully.";
+	else
+		print "\nFailed to open I2C, error code: "; INTEGER.h'rc;
+		exitsub
+	endif
+endsub
+
+// 初期設定
+sub DHT20_init()
+	dim ret as integer
+
+	dim OutStr$
+
+	rc = I2cReadReg8(nSlaveAddr, 0x71, ret)
+	sprint #OutStr$, integer.h'ret
+	OutStr$ = right$(OutStr$, 2)
+	print "\n 0x71: 0x"; OutStr$; " "; ret 
+
+	IF ret != 0x18 THEN
+		// initialization process
+	ENDIF
+
+endsub
+
+FUNCTION DHT20_meas()
+	dim stWrite$, stRead$, nReadLen
+
+	rc = I2cWriteReg16(nSlaveAddr, 0xAC, 0x0033)
+	dim i as integer
+	FOR i = 1 TO 3000
+	  // 何も処理を行わない
+	NEXT
+
+	stWrite$ = "": stRead$ = "": nReadLen = 7
+	rc = I2cWriteRead(nSlaveAddr, stWrite$, stRead$, nReadLen)
+	stRead$ = StrHexize$(stRead$)
+	IF rc!= 0 THEN
+		PRINT "\nFailed to WriteRead "; integer.h'rc
+	ELSE
+		//PRINT "\nRead = "; stRead$
+	ENDIF
+
+	dim i_tmp,i_hum
+	dim f_tmp as float
+	dim f_hum as float
+	i_tmp = (StrHex2Bin(stRead$, 7) << 12) + (StrHex2Bin(stRead$, 9) << 4) + (StrHex2Bin(stRead$, 11) >> 4)
+	f_tmp = i_tmp / 5242.88 - 50
+	i_hum = (StrHex2Bin(stRead$, 2) << 12) + (StrHex2Bin(stRead$, 4) << 4) + (StrHex2Bin(stRead$, 6) >> 4)
+	f_hum = i_hum / 10485.76
+	dim sys_temp as float: sys_temp = SYSINFO(2024) / 10.0	
+
+	PRINT "\n DHT20:tmp    = "; f_tmp
+	PRINT "\n DHT20:hum    = "; f_hum
+	PRINT "\n SYS:tmp 2024 = "; sys_temp
+
+endfunc 1
+
+I2COpen_()
+DHT20_init()
+
+// 計測タイマー
+ONEVENT EVTMR0 CALL DHT20_meas
+TimerStart(0, 1000, 1) //start a 500 millisecond recurring timer
+
+// クローズ
+//I2cClose(handle)
+
+// 計測待ち
+WAITEVENT
